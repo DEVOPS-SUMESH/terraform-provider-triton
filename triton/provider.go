@@ -59,6 +59,21 @@ func Provider() terraform.ResourceProvider {
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("TRITON_SKIP_TLS_VERIFY", ""),
 			},
+			"vault_address": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("VAULT_ADDR", ""),
+			},
+			"vault_token": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("VAULT_TOKEN", ""),
+			},
+			"vault_private_key_path": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("TRITON_PRIVATE_KEY_PATH_IN_VAULT", ""),
+			},
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
@@ -95,6 +110,10 @@ type Config struct {
 	KeyID                 string
 	URL                   string
 	InsecureSkipTLSVerify bool
+	VaultAddress          string
+	VaultToken            string
+	//Vault key path for your private key
+	VaultKeyPath string
 }
 
 func (c Config) validate() error {
