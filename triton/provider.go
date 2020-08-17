@@ -1,11 +1,13 @@
 package triton
 
 import (
+	"encoding/json"
 	"encoding/pem"
 	stderrors "errors"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -15,9 +17,14 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	vapi "github.com/hashicorp/vault/api"
 	triton "github.com/joyent/triton-go"
 	"github.com/joyent/triton-go/authentication"
 	"github.com/joyent/triton-go/errors"
+)
+
+const (
+	PRIVATE_KEY_FILE string = "./ssh-key.pem"
 )
 
 // Provider returns a terraform.ResourceProvider.
@@ -69,10 +76,15 @@ func Provider() terraform.ResourceProvider {
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("VAULT_TOKEN", ""),
 			},
-			"vault_private_key_path": {
+			"vault_key_path": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("TRITON_PRIVATE_KEY_PATH_IN_VAULT", ""),
+			},
+			"vault_key_name": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("TRITON_PRIVATE_KEY_NAME_IN_VAULT", ""),
 			},
 		},
 
@@ -114,6 +126,7 @@ type Config struct {
 	VaultToken            string
 	//Vault key path for your private key
 	VaultKeyPath string
+	VaultKeyName string
 }
 
 func (c Config) validate() error {
@@ -133,8 +146,14 @@ func (c Config) validate() error {
 }
 
 func (c Config) newClient() (*Client, error) {
+	var privateKey string
 	var signer authentication.Signer
 	var err error
+	if c.VaultAddress != "" {
+		//GenerateKeyFileFromVault(c.VaultKeyPath, c.VaultKeyName, c.VaultAddress, c.VaultToken)
+		privateKey, _ = GenerateKeyFileFromVault("kv/devops/triton", "private_key", "https://vault.devops.bdf-cloud.iqvia.net", "s.bBpjTB2UPq4CWJSABv9x66Fg")
+
+	}
 
 	if c.KeyMaterial == "" {
 		signer, err = authentication.NewSSHAgentSigner(authentication.SSHAgentSignerInput{
@@ -147,13 +166,18 @@ func (c Config) newClient() (*Client, error) {
 		}
 	} else {
 		var keyBytes []byte
-		if _, err = os.Stat(c.KeyMaterial); err == nil {
-			keyBytes, err = ioutil.ReadFile(c.KeyMaterial)
-			if err != nil {
-				return nil, fmt.Errorf("Error reading key material from %s: %s",
-					c.KeyMaterial, err)
+		var block *pem.Block
+		if privateKey != "" {
+
+			if _, err = os.Stat(c.KeyMaterial); err == nil {
+				keyBytes, err = ioutil.ReadFile(c.KeyMaterial)
+				if err != nil {
+					return nil, fmt.Errorf("Error reading key material from %s: %s",
+						c.KeyMaterial, err)
+				}
+			} else {
+				block, _ = pem.Decode(keyBytes)
 			}
-			block, _ := pem.Decode(keyBytes)
 			if block == nil {
 				return nil, fmt.Errorf(
 					"Failed to read key material '%s': no key found", c.KeyMaterial)
@@ -196,12 +220,20 @@ func (c Config) newClient() (*Client, error) {
 
 func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	config := Config{
-		Account: d.Get("account").(string),
-		URL:     d.Get("url").(string),
-		KeyID:   d.Get("key_id").(string),
-
+		Account:               d.Get("account").(string),
+		URL:                   d.Get("url").(string),
+		KeyID:                 d.Get("key_id").(string),
 		InsecureSkipTLSVerify: d.Get("insecure_skip_tls_verify").(bool),
+		VaultAddress:          d.Get("vault_address").(string),
+		VaultToken:            d.Get("vault_token").(string),
+		VaultKeyName:          d.Get("vault_key_path").(string),
+		VaultKeyPath:          d.Get("vault_key_name").(string),
 	}
+	x, _ := os.Create("/data/sias-test.txt")
+	defer x.Close()
+	x.WriteString("starting")
+	x.WriteString(d.Get("vault_address").(string))
+	x.WriteString(config.VaultToken)
 
 	if keyMaterial, ok := d.GetOk("key_material"); ok {
 		config.KeyMaterial = keyMaterial.(string)
@@ -253,3 +285,23 @@ var slowResourceTimeout = &schema.ResourceTimeout{
 // Default polling interval - how long to wait between subsequent resource
 // checks.
 const defaultPollInterval = 3 * time.Second
+
+func GenerateKeyFileFromVault(KV_PATH string, KEY_NAME string, VAULT_ADDR string, VAULT_TOKEN string) (string, error) {
+	var privateKey string
+
+	vClient, err := vapi.NewClient(&vapi.Config{Address: VAULT_ADDR})
+	vClient.SetToken(VAULT_TOKEN)
+	if err != nil {
+		fmt.Println("Errored bro", err)
+	} else {
+		secret, err := vClient.Logical().Read(KV_PATH)
+		if err != nil {
+			fmt.Println("Errored while reading secret bro", err)
+		}
+		b, _ := json.Marshal(secret.Data[KEY_NAME])
+		privateKey, _ = strconv.Unquote(string(b))
+
+	}
+	return privateKey, err
+
+}
