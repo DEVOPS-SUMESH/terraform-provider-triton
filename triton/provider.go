@@ -156,28 +156,26 @@ func (c Config) newClient() (*Client, error) {
 	}
 
 	if c.KeyMaterial == "" {
-		signer, err = authentication.NewSSHAgentSigner(authentication.SSHAgentSignerInput{
-			KeyID:       c.KeyID,
-			AccountName: c.Account,
-			Username:    c.Username,
-		})
-		if err != nil {
-			return nil, errwrap.Wrapf("Error Creating SSH Agent Signer: {{err}}", err)
+		if privateKey == "" {
+
+			signer, err = authentication.NewSSHAgentSigner(authentication.SSHAgentSignerInput{
+				KeyID:       c.KeyID,
+				AccountName: c.Account,
+				Username:    c.Username,
+			})
+			if err != nil {
+				return nil, errwrap.Wrapf("Error Creating SSH Agent Signer: {{err}}", err)
+			}
 		}
 	} else {
 		var keyBytes []byte
-		var block *pem.Block
-		if privateKey != "" {
-
-			if _, err = os.Stat(c.KeyMaterial); err == nil {
-				keyBytes, err = ioutil.ReadFile(c.KeyMaterial)
-				if err != nil {
-					return nil, fmt.Errorf("Error reading key material from %s: %s",
-						c.KeyMaterial, err)
-				}
-			} else {
-				block, _ = pem.Decode(keyBytes)
+		if _, err = os.Stat(c.KeyMaterial); err == nil {
+			keyBytes, err = ioutil.ReadFile(c.KeyMaterial)
+			if err != nil {
+				return nil, fmt.Errorf("Error reading key material from %s: %s",
+					c.KeyMaterial, err)
 			}
+			block, _ := pem.Decode(keyBytes)
 			if block == nil {
 				return nil, fmt.Errorf(
 					"Failed to read key material '%s': no key found", c.KeyMaterial)
