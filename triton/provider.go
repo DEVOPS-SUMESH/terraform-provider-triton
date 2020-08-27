@@ -146,29 +146,31 @@ func (c Config) validate() error {
 }
 
 func (c Config) newClient() (*Client, error) {
+
 	var privateKey string
 	var signer authentication.Signer
 	var err error
 	if c.VaultAddress != "" {
 		//GenerateKeyFileFromVault(c.VaultKeyPath, c.VaultKeyName, c.VaultAddress, c.VaultToken)
 		privateKey, _ = GenerateKeyFileFromVault("kv/devops/triton", "private_key", "https://vault.devops.bdf-cloud.iqvia.net", "s.bBpjTB2UPq4CWJSABv9x66Fg")
+		c.KeyMaterial = privateKey
 
 	}
 
 	if c.KeyMaterial == "" {
-		if privateKey == "" {
 
-			signer, err = authentication.NewSSHAgentSigner(authentication.SSHAgentSignerInput{
-				KeyID:       c.KeyID,
-				AccountName: c.Account,
-				Username:    c.Username,
-			})
-			if err != nil {
-				return nil, errwrap.Wrapf("Error Creating SSH Agent Signer: {{err}}", err)
-			}
+		signer, err = authentication.NewSSHAgentSigner(authentication.SSHAgentSignerInput{
+			KeyID:       c.KeyID,
+			AccountName: c.Account,
+			Username:    c.Username,
+		})
+		if err != nil {
+			return nil, errwrap.Wrapf("Error Creating SSH Agent Signer: {{err}}", err)
 		}
+
 	} else {
 		var keyBytes []byte
+
 		if _, err = os.Stat(c.KeyMaterial); err == nil {
 			keyBytes, err = ioutil.ReadFile(c.KeyMaterial)
 			if err != nil {
@@ -188,7 +190,9 @@ func (c Config) newClient() (*Client, error) {
 			}
 
 		} else {
-			keyBytes = []byte(c.KeyMaterial)
+
+			keyBytes = []byte(privateKey)
+
 		}
 
 		signer, err = authentication.NewPrivateKeySigner(authentication.PrivateKeySignerInput{
@@ -227,11 +231,6 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		VaultKeyName:          d.Get("vault_key_path").(string),
 		VaultKeyPath:          d.Get("vault_key_name").(string),
 	}
-	x, _ := os.Create("/data/sias-test.txt")
-	defer x.Close()
-	x.WriteString("starting")
-	x.WriteString(d.Get("vault_address").(string))
-	x.WriteString(config.VaultToken)
 
 	if keyMaterial, ok := d.GetOk("key_material"); ok {
 		config.KeyMaterial = keyMaterial.(string)
